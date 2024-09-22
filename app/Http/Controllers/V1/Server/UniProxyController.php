@@ -9,6 +9,7 @@ use App\Utils\CacheKey;
 use App\Utils\Helper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use App\Models\User;
 
 class UniProxyController extends Controller
 {
@@ -78,18 +79,25 @@ class UniProxyController extends Controller
     public function alivelist(Request $request)
     {
         $userService = new UserService();
-        $maxId = $userService->getMaxId();
-        $alive = [];
-
-        for ($id = 1; $id <= $maxId; $id++) {
-            if (Cache::has('ALIVE_IP_USER_' . $id)) {
-                $ips_array = Cache::get('ALIVE_IP_USER_' . $id);
-                if ($ips_array) {
-                    $alive[$id] = $ips_array['alive_ip'];
-                }
-            }
+        $users = $userService->getDeviceLimitedUsers();
+        if ($users->isEmpty()) {
+            return response()->json(['alive' => (object)[]]);        }
+        $cacheKeys = [];
+        foreach ($users as $user) {
+            $cacheKeys['ALIVE_IP_USER_' . $user->id] = $user->id;
         }
 
+        $alive = Cache::remember('ALIVE_LIST', 60, function () use ($cacheKeys) {
+            $alive = [];
+            $ips_arrays = Cache::many(array_keys($cacheKeys));
+
+            foreach ($ips_arrays as $key => $data) {
+                if ($data && isset($data['alive_ip'])) {
+                    $alive[$cacheKeys[$key]] = $data['alive_ip'];
+                }
+            }
+            return $alive;
+        });
         return response()->json(['alive' => (object)$alive]);
     }
 
